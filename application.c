@@ -13,7 +13,7 @@ void run(struct _application *ref)
 
 void main_loop(struct _application *ref)
 {
-	// to be implemented
+	// to be implemented.
 }
 
 void init_vk(struct _application *ref)
