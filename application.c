@@ -1,19 +1,37 @@
 #include "application.h"
 
-#include "vulkan/vulkan.h"
+#define GLFW_INCLUDE_VULKAN
+#include "GLFW/glfw3.h"
 
 #include "stdio.h"
 #include "stdlib.h"
 
 void run(struct _application *ref)
 {
+	init_window(ref);
 	init_vk(ref);
+
+	main_loop(ref);
+
 	cleanup(ref);
 }
 
 void main_loop(struct _application *ref)
 {
-	// to be implemented
+	while (!glfwWindowShouldClose(ref->window))
+	{
+		glfwPollEvents();
+	}
+}
+
+void init_window(struct _application *ref)
+{
+	glfwInit();
+
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+
+	ref->window = glfwCreateWindow(800, 600, "parallax", NULL, NULL);
 }
 
 void init_vk(struct _application *ref)
@@ -43,4 +61,7 @@ void init_vk(struct _application *ref)
 void cleanup(struct _application *ref)
 {
 	vkDestroyInstance(ref->vk_instance, NULL);
+
+	glfwDestroyWindow(ref->window);
+	glfwTerminate();
 } 
