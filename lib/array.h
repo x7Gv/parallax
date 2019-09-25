@@ -38,7 +38,7 @@ struct _array
  * @param      ref       Reference to the associated array struct.
  * @param[in]  capacity  New capacity.
  */
-static void array_resize(array *ref, int capacity);
+void array_resize(array *ref, int capacity);
 
 /**
  * @brief      Initialize array.

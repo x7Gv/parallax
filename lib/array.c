@@ -1,10 +1,9 @@
+#include "array.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "array.h"
-
-
-static void array_resize(array *ref, int capacity)
+void array_resize(array *ref, int capacity)
 {
 	#ifndef DEBUG_ON
 	printf("array_resize: %d, to %d\n", ref->capacity, capacity);
