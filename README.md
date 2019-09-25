@@ -1,4 +1,6 @@
 # parallax
 > An ever evolving parallel computing experiment
 
-_to be continued_
+### Dependencies:
+- libvulkan-dev
+- libglfw3
