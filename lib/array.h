@@ -10,7 +10,7 @@
 #define arr_init(arr) array arr; 	array_init(&arr)
 #define arr_append(arr, data) 		array_append(&arr, (void*) data)
 #define arr_set(arr, index, data)	array_set(&arr, index, (void*) data)
-#define arr_get(arr, _type, index) 	(_type) array_get(&arr, index)
+#define arr_get(arr, _type, index) 	*((_type *) array_get(&arr, index))
 #define arr_remove(arr, index) 		array_remove(&arr, index)
 
 #define arr_size(arr) array_size(&arr)
@@ -81,9 +81,9 @@ void array_set(array *ref, int index, void *data);
  *
  * @return     Return value from an index if present, NULL otherwise.
  */
-void* array_get(array *ref, int index);
+void *array_get(array *ref, int index);
 
-void* array_data(array *ref);
+void *array_data(array *ref);
 
 /**
  * @brief      Remove data from array by an index.

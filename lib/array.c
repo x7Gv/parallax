@@ -16,7 +16,6 @@ void array_resize(array *ref, int capacity)
 	}
 }
 
-
 void array_init(array *ref)
 {
 	ref->capacity = ARRAY_INIT_CAPACITY;
@@ -71,7 +70,7 @@ void array_remove(array *ref, int index)
 
 void* array_data(array *ref)
 {
-	return ref->data[0];
+	return ref->data;
 }
 
 void array_free(array *ref)
