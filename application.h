@@ -21,14 +21,21 @@ struct _application
 
 	VkFormat img_format;
 	VkFormat format;
+	VkSwapchainKHR swapchain;
+	VkImage swapchain_img;
 
 	GLFWwindow *window;
+
+	uint32_t width;
+	uint32_t height;
 
 	array queue_family_properties;
 	array instance_ext_names;
 	array device_ext_names;
+	array img_buffer;
 
 	uint32_t queue_family_count;
+	uint32_t swapchain_img_count;
 
 	unsigned int queue_family_index;
 	unsigned int graphics_queue_family_index;
@@ -43,19 +50,21 @@ void init_swapchain(struct _application *ref);
 
 void init_window(struct _application *ref);
 
+void init_swapchain(struct _application *ref);
+
 void create_surface(struct _application *ref);
 
-void init_vk(struct _application *ref);
+void create_command_pool(struct _application *ref);
 
-int is_device_suitable(struct _application *ref);
+void init_vk(struct _application *ref);
 
 void init_device_ext_names(struct _application *ref);
 
 void init_instance_ext_names(struct _application *ref);
 
-void pick_physical_device(struct _application *ref);
+void init_physical_device(struct _application *ref);
 
-void pick_logical_device(struct _application *ref);
+void init_logical_device(struct _application *ref);
 
 void cleanup(struct _application *ref);
 
