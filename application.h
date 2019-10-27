@@ -7,10 +7,25 @@
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 
+typedef struct _swapchain_buffers {
+	VkImage image;
+	VkImageView view;
+} swapchain_buffer;
+
 typedef struct _application application;
 
 struct _application
 {
+	/**
+	 * Debug stuff with LunarG Validation Layers.
+	 */
+
+	VkDebugUtilsMessengerEXT debug_messenger;
+
+	/**
+	 * Rest of stuff.
+	 */
+
 	VkInstance vk_instance;
 	VkCommandPool cmd_pool;
 	VkCommandBuffer cmd;
@@ -32,7 +47,7 @@ struct _application
 	array queue_family_properties;
 	array instance_ext_names;
 	array device_ext_names;
-	array img_buffer;
+	array swapc_buffer;
 
 	uint32_t queue_family_count;
 	uint32_t swapchain_img_count;

@@ -6,6 +6,98 @@
 #include "stdio.h"
 #include "stdlib.h"
 
+#ifdef NDEBUG
+const uint32_t enable_validation_layers = 0;
+#else
+const uint32_t enable_validation_layers = 1;
+#endif
+
+VkResult create_debug_messenger_EXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pDebugMessenger) 
+{
+	PFN_vkCreateDebugUtilsMessengerEXT func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+
+	if (func != NULL) {
+		return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+	} else {
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	}
+}
+
+void destroy_debug_utils_messenger_EXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks *pAllocator)
+{
+	PFN_vkDestroyDebugUtilsMessengerEXT func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+
+	if (func != NULL) {
+		func(instance, debugMessenger, pAllocator);
+	}
+}
+
+void populate_debug_messenger_ci(VkDebugUtilsMessengerCreateInfoEXT create_info) 
+{
+	create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+
+	create_info.messageSeverity = 
+		VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+	create_info.messageType = 
+		VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+}
+
+void setup_debug_messenger(struct _application *ref)
+{
+	if (enable_validation_layers)
+		return;
+
+	VkDebugUtilsMessengerCreateInfoEXT ci = {};
+	populate_debug_messenger_ci(ci);
+
+	int res = create_debug_messenger_EXT(ref->vk_instance, &ci, NULL, &ref->debug_messenger);
+	if (res != VK_SUCCESS) {
+		fprintf(stderr, "ERR: failed to create debug messenger \n // Assertion: `create_debug_messenger_EXT() != VK_SUCCESS`\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
+void query_req_ext(array *arr)
+{
+	uint32_t glfw_ext_count = 0;
+	const char **glfw_extensions;
+
+	glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_ext_count);
+
+	array_init(arr);
+	for (uint32_t i = 0; i < glfw_ext_count; i++) {
+		array_append(arr, (void *) glfw_extensions[i]);
+	}
+
+	if (enable_validation_layers) {
+		array_append(arr, (void *) VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+	}
+}
+
+int check_validation_layer_support()
+{
+	uint32_t layer_count;
+	vkEnumerateInstanceLayerProperties(&layer_count, NULL);
+
+	array available_layers;
+	array_init(&available_layers);
+	array_resize(&available_layers, layer_count);
+
+	VkLayerProperties tmp_props[layer_count];
+	vkEnumerateInstanceLayerProperties(&layer_count, tmp_props);
+
+	for (uint32_t i = 0; i < layer_count; i++) {
+
+		VkLayerProperties *tmp_layer_prop;
+		VkLayerProperties layer_prop_data = tmp_props[i];
+		VAL_TO_HEAP(tmp_layer_prop, VkLayerProperties, layer_prop_data);
+
+		array_append(&available_layers, tmp_layer_prop);
+	}
+
+	return 0;
+}
+
 void run(struct _application *ref)
 {
 	init_window(ref);
@@ -69,13 +161,17 @@ void init_vk(struct _application *ref)
 	 * Query INSTANCE EXTENSIONS for GLFW etc.
 	 */
 
-	uint32_t glfw_extension_count = 0;
-	const char** glfw_extensions; 
+	array ext_arr;
+	query_req_ext(&ext_arr);
 
-	glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
+	const char * const * tmp_arr[array_size(&ext_arr)];
 
-	instance_ci.enabledExtensionCount = glfw_extension_count;
-	instance_ci.ppEnabledExtensionNames = glfw_extensions;
+	for (int i = 0; i < array_size(&ext_arr); i++) {
+		tmp_arr[i] = ( ((const char * const *) array_get(&ext_arr, i)));
+	}
+
+	instance_ci.enabledExtensionCount = array_size(&ext_arr);
+	instance_ci.ppEnabledExtensionNames = *tmp_arr;
 	instance_ci.enabledLayerCount = 0;
 
 	int res = vkCreateInstance(&instance_ci, NULL, &ref->vk_instance);
@@ -93,17 +189,18 @@ void init_vk(struct _application *ref)
 	arr_init(extensions);
 	array_resize(&extensions, ext_count);
 
-	VkExtensionProperties tmp_props[32];
+	VkExtensionProperties tmp_props[ext_count];
 	vkEnumerateInstanceExtensionProperties(NULL, &ext_count, tmp_props);
 
 	/**
 	 * Finalize by calling the other modules.
 	 */
 
-	create_surface(ref);
+	//create_surface(ref);
 
-	init_physical_device(ref);
-	init_logical_device(ref);
+	//init_physical_device(ref);
+	//init_logical_device(ref);
+	//init_swapchain(ref);
 }
 
 void init_physical_device(struct _application *ref)
@@ -152,13 +249,11 @@ void init_physical_device(struct _application *ref)
 	ref->physical_device = *((VkPhysicalDevice *) p_phys_tmp);
 }
 
-void init_device(struct _application *ref)
+void init_logical_device(struct _application *ref)
 {
 	VkResult res;
 
 	VkDeviceQueueCreateInfo queue_info = {};
-
-	VkQueueFamilyProperties properties_tmp[256];
 
 	uint32_t queue_family_count;
 	vkGetPhysicalDeviceQueueFamilyProperties(ref->physical_device, &ref->queue_family_count, NULL);
@@ -178,12 +273,13 @@ void init_device(struct _application *ref)
 	VkQueueFamilyProperties q_props[ref->queue_family_count];
 	vkGetPhysicalDeviceQueueFamilyProperties(ref->physical_device, &ref->queue_family_count, q_props);
 
+	array_resize(&ref->queue_family_properties, ref->queue_family_count);
 	for (int i = 0; i < ref->queue_family_count; i++) {
 		VkQueueFamilyProperties *p_qprops_tmp;
-		VkQueueFamilyProperties qprops_tmp = properties_tmp[i];
+		VkQueueFamilyProperties qprops_tmp = q_props[i];
 		VAL_TO_HEAP(p_qprops_tmp, VkQueueFamilyProperties, qprops_tmp);
 
-		array_append(&ref->queue_family_properties, ((VkQueueFamilyProperties *) p_qprops_tmp));
+		array_append(&ref->queue_family_properties, p_qprops_tmp);
 	}
 
 	int found = 0;
@@ -279,8 +375,15 @@ void init_swapchain(struct _application *ref)
 	ref->graphics_queue_family_index = UINT32_MAX;
 	ref->present_queue_family_index = UINT32_MAX;
 
-	for (uint32_t i; i < ref->queue_family_count; ++i) {
-		if (((*((VkQueueFamilyProperties *) array_get(&ref->queue_family_properties, i))).queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) {
+	printf("- %d\n", ref->queue_family_count);
+
+	for (uint32_t i = 0; i < ref->queue_family_count; ++i) {
+		VkQueueFamilyProperties tmp_props = (*(VkQueueFamilyProperties *) array_get(&ref->queue_family_properties, i));
+		printf("queue_flags <<< %d\n", (*(VkQueueFamilyProperties *) array_get(&ref->queue_family_properties, i)).queueFlags);
+		if ((tmp_props.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) {
+
+			printf("yoa\n");
+
 			if (ref->queue_family_index == UINT32_MAX)
 				ref->graphics_queue_family_index = i;
 
@@ -311,12 +414,14 @@ void init_swapchain(struct _application *ref)
 	 * Throw an error if GRAPHICS and PRESENT supporting queues was not present.
 	 */
 
+	printf("yö\n");
+
 	if (ref->graphics_queue_family_index == UINT32_MAX || ref->present_queue_family_index == UINT32_MAX) {
 		fprintf(stderr, "ERR: Could not find a queue supporting GRAPHICS and PRESENT\n");
 		exit(EXIT_FAILURE);
 	}
 
-	init_logical_device(ref);
+	printf("ss\n");
 
 	/**
 	 * Get list of VkFormats that are supported.
@@ -346,7 +451,7 @@ void init_swapchain(struct _application *ref)
 		ref->format = VK_FORMAT_B8G8R8A8_UNORM;
 	}
 	else {
-		if (format_count >= 1) {
+		if (!(format_count >= 1)) {
 			fprintf(stderr, "ERR: failed to query for VkFormats\n // Assertion: `VkFormat - count < 1`\n");
 			exit(EXIT_FAILURE);
 		}
@@ -354,9 +459,15 @@ void init_swapchain(struct _application *ref)
 		ref->format = surf_formats[0].format;		
 	}
 
+	printf("aaa\n");
+
 	free(surf_formats);
 
+	printf("aaa*\n");
+
 	VkSurfaceCapabilitiesKHR surf_capabilities;
+
+	printf("bbb\n");
 
 	res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ref->physical_device, ref->surface, &surf_capabilities);
 	if (res != VK_SUCCESS) {
@@ -364,12 +475,16 @@ void init_swapchain(struct _application *ref)
 		exit(EXIT_FAILURE);
 	}
 
+	printf("bbb*\n");
+
 	uint32_t present_mode_count;
 	res = vkGetPhysicalDeviceSurfacePresentModesKHR(ref->physical_device, ref->surface, &present_mode_count, NULL);
 	if (res != VK_SUCCESS) {
 		fprintf(stderr, "ERR: failed to query for Present Modes\n // Assertion: `vkGetPhysicalDeviceSurfacePresentModesKHR != VK_SUCCESS`");
 		exit(EXIT_FAILURE);
 	}
+
+	printf("bbb**\n");
 
 	VkPresentModeKHR *present_modes = (VkPresentModeKHR *) malloc(present_mode_count * sizeof(VkPresentModeKHR));
 
@@ -379,9 +494,13 @@ void init_swapchain(struct _application *ref)
 		exit(EXIT_FAILURE);
 	}
 
+	printf("bbb(*)\n");
+
 	/**
 	 * Define swapchain extents
 	 */
+
+	printf("ccc\n");
 
 	VkExtent2D swapchain_extent;
 	if (surf_capabilities.currentExtent.width == 0xFFFFFFFF) {
@@ -413,6 +532,8 @@ void init_swapchain(struct _application *ref)
 	 * Only one presentable image is required at the time.
 	 */
 
+	printf("ddd\n");
+
 	uint32_t desiredNumberOfSwapChainImages = surf_capabilities.minImageCount;
 
     	VkSurfaceTransformFlagBitsKHR pre_transform;
@@ -421,6 +542,8 @@ void init_swapchain(struct _application *ref)
   	} else {
   	      pre_transform = surf_capabilities.currentTransform;
    	}
+
+   	printf("eee\n");
 
    	/**
    	 * Find a supported composite alpha mode - one of following is guaranteed to be set.
@@ -433,6 +556,8 @@ void init_swapchain(struct _application *ref)
 		VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR, 
 		VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
 	};
+
+	printf("fff\n");
 
 	for (uint32_t i = 0; i < sizeof(composite_alpha_flags) / sizeof(composite_alpha_flags[0]); i++) {
 		if (surf_capabilities.supportedCompositeAlpha & composite_alpha_flags[i]) {
@@ -448,24 +573,35 @@ void init_swapchain(struct _application *ref)
 	swapchain_ci.minImageCount = desiredNumberOfSwapChainImages;
 	swapchain_ci.imageFormat = ref->format;
 	swapchain_ci.imageExtent.width = swapchain_extent.width;
+	swapchain_ci.imageExtent.height = swapchain_extent.height;
 	swapchain_ci.preTransform = pre_transform;
 	swapchain_ci.compositeAlpha = composite_alpha;
 	swapchain_ci.imageArrayLayers = 1;
 	swapchain_ci.presentMode = swapchain_present_mode;
 	swapchain_ci.oldSwapchain = VK_NULL_HANDLE;
-	swapchain_ci.clipped = 1;
+	swapchain_ci.clipped = (VkBool32) 1;
 	swapchain_ci.imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
 	swapchain_ci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	swapchain_ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	swapchain_ci.queueFamilyIndexCount = 0;
 	swapchain_ci.pQueueFamilyIndices = NULL;
 
+	printf("ggg\n");
+
 	uint32_t queue_family_indices[2] = { (uint32_t) ref->graphics_queue_family_index, (uint32_t) ref->present_queue_family_index };
+
+	printf("g < %d, p < %d\n", ref->graphics_queue_family_index, ref->present_queue_family_index);
+
 	if (ref->graphics_queue_family_index != ref->present_queue_family_index) {
+
+		printf("yöss\n");
+
 		swapchain_ci.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
 		swapchain_ci.queueFamilyIndexCount = 2;
 		swapchain_ci.pQueueFamilyIndices = queue_family_indices;
 	}
+
+	printf("ggg*\n");
 
 	res = vkCreateSwapchainKHR(ref->device, &swapchain_ci, NULL, &ref->swapchain);
 	if (res != VK_SUCCESS) {
@@ -473,11 +609,15 @@ void init_swapchain(struct _application *ref)
 		exit(EXIT_FAILURE);
 	}
 
+	printf("ggg**\n");
+
 	res = vkGetSwapchainImagesKHR(ref->device, ref->swapchain, &ref->swapchain_img_count, NULL);
 	if (res != VK_SUCCESS) {
 		fprintf(stderr, "ERR: failed get swapchain images\n // Assertion: `vkGetSwapchainImagesKHR != VK_SUCCESS`");
 		exit(EXIT_FAILURE);
 	}
+
+	printf("ggg(*)\n");
 
 	VkImage *swapchain_imgs = (VkImage *) malloc(ref->swapchain_img_count * sizeof(VkImage));
 	res = vkGetSwapchainImagesKHR(ref->device, ref->swapchain, &ref->swapchain_img_count, &ref->swapchain_img);
@@ -486,23 +626,31 @@ void init_swapchain(struct _application *ref)
 		exit(EXIT_FAILURE);
 	}
 
-	array_resize(&ref->img_buffer, ref->swapchain_img_count);
-	for (uint32_t i = 0; i < ref->swapchain_img_count; i++) {
-		VkImage *p_img_tmp;
-		VkImage img_tmp = swapchain_imgs[i];
-		VAL_TO_HEAP(p_img_tmp, VkImage, img_tmp);
+	printf("ggg(*)*\n");
 
-		array_append(&ref->img_buffer, (VkImage *) p_img_tmp);
+	array_resize(&ref->swapc_buffer, ref->swapchain_img_count);
+	for (uint32_t i = 0; i < ref->swapchain_img_count; i++) {
+		swapchain_buffer sc_buffer;
+
+		swapchain_buffer *p_scbuffer_tmp;
+		swapchain_buffer scbuffer;
+		scbuffer.image = swapchain_imgs[i];
+		scbuffer.view = VK_NULL_HANDLE;
+
+		VAL_TO_HEAP(p_scbuffer_tmp, swapchain_buffer, scbuffer);
+		array_append(&ref->swapc_buffer, p_scbuffer_tmp);
 	}
 
 	free(swapchain_imgs);
+
+	printf("ggg(**)\n");
 
 	for (uint32_t i = 0; i < ref->swapchain_img_count; i++) {
 		VkImageViewCreateInfo color_image_view = {};
 		color_image_view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		color_image_view.pNext = NULL;
 		color_image_view.flags = 0;
-		color_image_view.image = *((VkImage *) array_get(&ref->img_buffer, i));
+		color_image_view.image = *((VkImage *) array_get(&ref->swapc_buffer, i));
 		color_image_view.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		color_image_view.format = ref->format;
 		color_image_view.components.r = VK_COMPONENT_SWIZZLE_R;
@@ -515,22 +663,24 @@ void init_swapchain(struct _application *ref)
 		color_image_view.subresourceRange.baseArrayLayer = 0;
 		color_image_view.subresourceRange.layerCount = 1;
 
-		res = vkCreateImageView(ref->device, &color_image_view, NULL, array_get(&ref->img_buffer, i));
+		res = vkCreateImageView(ref->device, &color_image_view, NULL, array_get(&ref->swapc_buffer, i));
 		if (res != VK_SUCCESS) {
 			fprintf(stderr, "ERR: failed to initialize Image Views\n // Assertion: `vkCreateImageView != VK_SUCCESS`\n");
 			exit(EXIT_FAILURE);
 		}
 	}
 
-}
+	printf("youy\n");
 
+}
 
 
 void cleanup(struct _application *ref)
 {
 	for (uint32_t i = 0; i < ref->swapchain_img_count; i++) {
-		VkImage img_tmp =  array_get(&ref->img_buffer, i);
-		vkDestroyImageView(ref->device, img_tmp->view, NULL);
+
+		swapchain_buffer tmp_view = *((swapchain_buffer *) array_get(&ref->swapc_buffer, i));
+		vkDestroyImageView(ref->device, tmp_view.view, NULL);
 	}
 
 	vkDestroySurfaceKHR(ref->vk_instance, ref->surface, NULL);
