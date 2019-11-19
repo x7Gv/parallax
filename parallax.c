@@ -11,4 +11,6 @@ int main(int argc, char* argv[])
 
 	application *app = malloc(sizeof(application));
 	run(app);
+
+	return 0;
 }

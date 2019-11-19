@@ -5,7 +5,7 @@
 
 void array_resize(array *ref, int capacity)
 {
-	#ifndef DEBUG_ON
+	#ifndef DEBUG_OFF
 	printf("array_resize: %d, to %d\n", ref->capacity, capacity);
 	#endif
 
@@ -21,6 +21,10 @@ void array_init(array *ref)
 	ref->capacity = ARRAY_INIT_CAPACITY;
 	ref->size = 0;
 	ref->data = malloc(sizeof(void*) * ref->capacity);
+
+	for (int i = 0; i < ref->capacity; i++) {
+		ref->data[i] = NULL;
+	}
 }
 
 int array_size(array *ref)
@@ -33,7 +37,11 @@ void array_append(array *ref, void *data)
 	if (ref->capacity == ref->size)
 		array_resize(ref, ref->capacity * 2);
 
+	printf("+ %d\n", ref->size);
+
 	ref->data[ref->size++] = data;
+
+	printf("- %d\n", ref->size);
 }
 
 void array_set(array *ref, int index, void *data)
@@ -75,5 +83,7 @@ void* array_data(array *ref)
 
 void array_free(array *ref)
 {
-	free(ref);
+	for (int i = 0; i < ref->size; i++) {
+		free(ref->data[i]);
+	}
 }

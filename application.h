@@ -3,19 +3,44 @@
 
 #include "lib/array.h"
 #include "lib/memutil.h"
+#include "stdbool.h"
+
+#include <cglm/cglm.h>
 
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 
-typedef struct _swapchain_buffers {
-	VkImage image;
-	VkImageView view;
-} swapchain_buffer;
+#define PHYSDEV(index)	arr_get(ref->physical_devices, VkPhysicalDevice, index)
+
+typedef struct vertex_t
+{
+	vec2 pos;
+	vec3 color;
+}
+vertex_t;
+
+static VkVertexInputBindingDescription get_binding_description();
+
+typedef struct _queue_family_indices_t
+{
+	uint32_t graphics_family;
+	uint32_t present_family;
+}
+queue_family_indices_t;
+
+typedef struct _swapchain_supp_detail
+{
+	VkSurfaceCapabilitiesKHR capabilities;
+	array formats;
+	array present_modes;
+}
+swapchain_supp_detail_t;
 
 typedef struct _application application;
 
 struct _application
 {
+
 	/**
 	 * Debug stuff with LunarG Validation Layers.
 	 */
@@ -28,16 +53,25 @@ struct _application
 
 	VkInstance vk_instance;
 	VkCommandPool cmd_pool;
-	VkCommandBuffer cmd;
 
-	VkPhysicalDevice physical_device;
 	VkDevice device;
 	VkSurfaceKHR surface;
 
-	VkFormat img_format;
-	VkFormat format;
+	VkQueue graphics_queue;
+	VkQueue present_queue;
+
+	VkFormat swapc_img_format;
+	VkExtent2D swapc_extent;
 	VkSwapchainKHR swapchain;
-	VkImage swapchain_img;
+
+	VkRenderPass render_pass;
+	VkPipelineLayout pipeline_layout;
+	VkPipeline graphics_pipeline;
+
+	array img_available_semaphore;
+	array render_finished_semaphore;
+	array in_flight_fences;
+	array imgs_in_flight;
 
 	GLFWwindow *window;
 
@@ -47,7 +81,14 @@ struct _application
 	array queue_family_properties;
 	array instance_ext_names;
 	array device_ext_names;
+	array physical_devices;
+
 	array swapc_buffer;
+	array swapc_imgs;
+	array swapc_img_views;
+	array swapc_framebuffers;
+
+	array cmd_buffers;
 
 	uint32_t queue_family_count;
 	uint32_t swapchain_img_count;
@@ -55,17 +96,27 @@ struct _application
 	unsigned int queue_family_index;
 	unsigned int graphics_queue_family_index;
 	unsigned int present_queue_family_index;
+
+	bool framebuffer_resized;
 };
+
+queue_family_indices_t query_queue_families(VkPhysicalDevice phys_device, VkSurfaceKHR surface);
+
+int check_validation_layer_support();
+
+void query_req_ext(array *arr);
 
 void run(struct _application *ref);
 
 void main_loop(struct _application *ref);
 
-void init_swapchain(struct _application *ref);
+void draw_frame(struct _application *ref);
+
+void create_sync_objects(struct _application *ref);
 
 void init_window(struct _application *ref);
 
-void init_swapchain(struct _application *ref);
+void init_image_views(struct _application *ref);
 
 void create_surface(struct _application *ref);
 
@@ -81,6 +132,16 @@ void init_physical_device(struct _application *ref);
 
 void init_logical_device(struct _application *ref);
 
+void create_graphics_pipeline(struct _application *ref);
+
+void create_framebuffers(struct _application *ref);
+
+void create_command_pool(struct _application *ref);
+
+void create_command_buffers(struct _application *ref);
+
 void cleanup(struct _application *ref);
+
+void create_renderpass(struct _application *ref);
 
 #endif
