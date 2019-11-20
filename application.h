@@ -60,6 +60,11 @@ struct _application
 	VkQueue graphics_queue;
 	VkQueue present_queue;
 
+	VkBuffer vertex_buffer;
+	VkDeviceMemory vertex_buffer_memory;
+	VkBuffer uniform_buffer;
+	VkDeviceMemory uniform_buffer_memory;
+
 	VkFormat swapc_img_format;
 	VkExtent2D swapc_extent;
 	VkSwapchainKHR swapchain;
@@ -137,6 +142,10 @@ void create_graphics_pipeline(struct _application *ref);
 void create_framebuffers(struct _application *ref);
 
 void create_command_pool(struct _application *ref);
+
+uint32_t find_memory_type(struct _application *ref, uint32_t type_filter, VkMemoryPropertyFlags properties);
+
+void create_vertex_buffer(struct _application *ref);
 
 void create_command_buffers(struct _application *ref);
 

@@ -1,2 +1,2 @@
-glslc hellotriangle.vert -o vert.spv
-glslc hellotriangle.frag -o frag.spv
+glslc shaders/hellotriangle.vert -o shaders/vert.spv
+glslc shaders/hellotriangle.frag -o shaders/frag.spv

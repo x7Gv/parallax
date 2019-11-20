@@ -24,15 +24,15 @@ const int MAX_FRAMES_IN_FLIGHT = 2;
 size_t current_frame = 0;
 
 
+
 /**
  *	Raw vertex data waiting for Vertex / Uniform buffer implementation.
  *	Given pos (x, y) and color data (rgb) in form of vertex_t struct.
  */
 const struct vertex_t vertices[] = {
-	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-	{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
-
+	{{0.0f, -0.5f}, {1.0f, 1.0f, 0.0f}},
+	{{0.5f, 0.5f},  {0.0f, 1.0f, 0.0f}},
+	{{-0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}}
 };
 
 /**
@@ -250,7 +250,6 @@ void main_loop(struct _application *ref)
 void draw_frame(struct _application *ref) 
 {
 	VkResult res;
-
 
 	vkWaitForFences(ref->device, 1, &arr_get(ref->in_flight_fences, VkFence, current_frame), VK_TRUE, UINT64_MAX);
 
@@ -517,6 +516,7 @@ void init_vk(struct _application *ref)
 	create_graphics_pipeline(ref);
 	create_framebuffers(ref);
 	create_command_pool(ref);
+	create_vertex_buffer(ref);
 	create_command_buffers(ref);
 	create_sync_objects(ref);
 
@@ -698,13 +698,14 @@ void create_command_buffers(struct _application *ref)
 		render_pass_bi.pClearValues = &clear_color;
 
 		vkCmdBeginRenderPass(arr_get(ref->cmd_buffers, VkCommandBuffer, i), &render_pass_bi, VK_SUBPASS_CONTENTS_INLINE);
-		
 		vkCmdBindPipeline(arr_get(ref->cmd_buffers, VkCommandBuffer, i), VK_PIPELINE_BIND_POINT_GRAPHICS, ref->graphics_pipeline);
-		vkCmdDraw(arr_get(ref->cmd_buffers, VkCommandBuffer, i), 3, 1, 0, 0);
 
+		VkBuffer vertex_buffers[] = { ref->vertex_buffer };
+		VkDeviceSize offsets[] = {0}; 
+		vkCmdBindVertexBuffers(arr_get(ref->cmd_buffers, VkCommandBuffer, i), 0, 1, vertex_buffers, offsets);
+
+		vkCmdDraw(arr_get(ref->cmd_buffers, VkCommandBuffer, i), sizeof(vertices), 1, 0, 0);
 		vkCmdEndRenderPass(arr_get(ref->cmd_buffers, VkCommandBuffer, i));
-
-
 
 		res = vkEndCommandBuffer(arr_get(ref->cmd_buffers, VkCommandBuffer, i));
 		if (res != VK_SUCCESS) {
@@ -868,6 +869,109 @@ void create_renderpass(struct _application *ref)
 	printf("yoyoyyoos\n");
 }
 
+uint32_t find_memory_type(struct _application *ref, uint32_t type_filter, VkMemoryPropertyFlags properties)
+{
+	VkPhysicalDeviceMemoryProperties mem_props;
+	vkGetPhysicalDeviceMemoryProperties(PHYSDEV(0), &mem_props);
+
+	for (uint32_t i = 0; i < mem_props.memoryTypeCount; i++) {
+		if ((type_filter & (1 << i)) && (mem_props.memoryTypes[i].propertyFlags & properties) == properties) {
+			return i;
+		}
+	}
+
+	return VK_NULL_HANDLE;
+}
+
+void copy_buffer(struct _application *ref, VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size) 
+{
+	VkCommandBufferAllocateInfo alloc_info = {};
+	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandPool = ref->cmd_pool;
+	alloc_info.commandBufferCount = 1;
+
+	VkCommandBuffer command_buffer;
+	vkAllocateCommandBuffers(ref->device, &alloc_info, &command_buffer);
+
+	VkCommandBufferBeginInfo begin_info = {};
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkBeginCommandBuffer(command_buffer, &begin_info);
+
+	VkBufferCopy copy_region = {};
+	copy_region.srcOffset = 0;
+	copy_region.dstOffset = 0;
+	copy_region.size = size;
+	vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
+
+	vkEndCommandBuffer(command_buffer);
+
+	VkSubmitInfo submit_info = {};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &command_buffer;
+
+	vkQueueSubmit(ref->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(ref->graphics_queue);
+
+	vkFreeCommandBuffers(ref->device, ref->cmd_pool, 1, &command_buffer);
+}
+
+void create_buffer(struct _application *ref, VkDeviceSize size, VkBufferUsageFlags usage, 
+	VkMemoryPropertyFlags props, VkBuffer *buffer, VkDeviceMemory *buffer_mem)
+{
+	VkResult res;
+
+	VkBufferCreateInfo buffer_info = {};
+	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer_info.size = size;
+	buffer_info.usage = usage;
+	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	res = vkCreateBuffer(ref->device, &buffer_info, NULL, buffer);
+	if (res != VK_SUCCESS) {
+		fprintf(stderr, "ERR: failed to create buffer\n // Assertion: `vkCreateBuffer != VK_SUCCESS`\n");
+		exit(EXIT_FAILURE);
+	}
+
+	VkMemoryRequirements mem_req;
+	vkGetBufferMemoryRequirements(ref->device, *buffer, &mem_req);
+
+	VkMemoryAllocateInfo alloc_info = {};
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = mem_req.size;
+	alloc_info.memoryTypeIndex = find_memory_type(ref, mem_req.memoryTypeBits, props);
+
+	res = vkAllocateMemory(ref->device, &alloc_info, NULL, buffer_mem);
+	if (res != VK_SUCCESS) {
+		fprintf(stderr, "ERR: failed to allocate buffer memory\n // Assertion: `vkAllocateMemory != VK_SUCCESS`\n");
+		exit(EXIT_FAILURE);
+	}
+
+	vkBindBufferMemory(ref->device, *buffer, *buffer_mem, 0);
+}
+
+void create_vertex_buffer(struct _application *ref)
+{
+	VkDeviceSize buffer_size = sizeof(vertices);
+
+	VkBuffer staging_buffer;
+	VkDeviceMemory staging_buffer_memory;
+	create_buffer(ref, buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staging_buffer, &staging_buffer_memory);
+
+	void *data;
+	vkMapMemory(ref->device, staging_buffer_memory, 0, buffer_size, 0, &data);
+	memcpy(data, vertices, (size_t) buffer_size);
+	vkUnmapMemory(ref->device, staging_buffer_memory);
+
+	create_buffer(ref, buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &ref->vertex_buffer, &ref->vertex_buffer_memory);
+	copy_buffer(ref, staging_buffer, ref->vertex_buffer, buffer_size);
+
+	vkDestroyBuffer(ref->device, staging_buffer, NULL);
+	vkFreeMemory(ref->device, staging_buffer_memory, NULL);
+}
+
 /**
  *	Create the needed graphics pipeline stuff.
  */
@@ -911,7 +1015,7 @@ void create_graphics_pipeline(struct _application *ref)
 	vert_input_info.vertexBindingDescriptionCount = 1;
 	vert_input_info.vertexAttributeDescriptionCount = (uint32_t) array_size(&attrib_desc);
 	vert_input_info.pVertexBindingDescriptions = &bind_desc;
-	vert_input_info.pVertexAttributeDescriptions = NULL;
+	vert_input_info.pVertexAttributeDescriptions = attr_tmp;
 
 	VkPipelineInputAssemblyStateCreateInfo input_assembly = {};
 
@@ -1085,6 +1189,9 @@ void cleanup(struct _application *ref)
 {
 	cleanup_swapchain(ref);
 
+	vkDestroyBuffer(ref->device, ref->vertex_buffer, NULL);
+	vkFreeMemory(ref->device, ref->vertex_buffer_memory, NULL);
+
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 
 		VkSemaphore img = arr_get(ref->img_available_semaphore, VkSemaphore, i);
@@ -1116,7 +1223,11 @@ void cleanup(struct _application *ref)
 	array_free(&ref->swapc_img_views);
 	array_free(&ref->swapc_framebuffers);
 	array_free(&ref->cmd_buffers);
+
 	array_free(&ref->img_available_semaphore);
+	array_free(&ref->render_finished_semaphore);
+	array_free(&ref->in_flight_fences);
+	array_free(&ref->imgs_in_flight);
 
 	glfwDestroyWindow(ref->window);
 	glfwTerminate();
