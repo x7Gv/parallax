@@ -4,3 +4,4 @@
 ### Dependencies:
 - libvulkan-dev
 - libglfw3
+- cglm
