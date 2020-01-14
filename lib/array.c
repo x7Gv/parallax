@@ -1,30 +1,28 @@
 #include "array.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-
-void array_resize(array *ref, int capacity)
+void array_resize(array *ref, int capacity, bool set_size)
 {
 	#ifndef DEBUG_OFF
 	printf("array_resize: %d, to %d\n", ref->capacity, capacity);
 	#endif
 
-	void **data = realloc(ref->data, sizeof(void*) * capacity);
+	if (set_size)
+		ref->size = capacity;
+
+	char *data = realloc(ref->data, ref->member_size * capacity);
 	if (data) {
 		ref->data = data;
 		ref->capacity = capacity;
 	}
 }
 
-void array_init(array *ref)
+void array_init(array *ref, size_t member_size)
 {
+	ref->member_size = member_size;
+
 	ref->capacity = ARRAY_INIT_CAPACITY;
 	ref->size = 0;
-	ref->data = malloc(sizeof(void*) * ref->capacity);
-
-	for (int i = 0; i < ref->capacity; i++) {
-		ref->data[i] = NULL;
-	}
+	ref->data = malloc(ref->capacity * member_size);
 }
 
 int array_size(array *ref)
@@ -34,56 +32,38 @@ int array_size(array *ref)
 
 void array_append(array *ref, void *data)
 {
-	if (ref->capacity == ref->size)
-		array_resize(ref, ref->capacity * 2);
+	if (ref->capacity <= ref->size)
+		array_resize(ref, ref->capacity * 2, false);
 
-	printf("+ %d\n", ref->size);
-
-	ref->data[ref->size++] = data;
-
-	printf("- %d\n", ref->size);
+	memcpy(&ref->data[ref->member_size * ref->size++], data, ref->member_size);
 }
 
 void array_set(array *ref, int index, void *data)
 {
 	if (index >= 0 && index < ref->size)
-		ref->data[index] = data;
+		memcpy(&ref->data[ref->member_size * index], data, ref->member_size);
 }
 
-void* array_get(array *ref, int index)
+void *array_get(array *ref, int index)
 {
-	if (index >= 0 && index < ref->size)
-		return ref->data[index];
 
-	return NULL;
-}
+	if (index >= 0 && index < ref->size) {
 
-void array_remove(array *ref, int index)
-{
-	if (index < 0 || index >= ref->size)
-		return;
+		void *p = malloc(ref->member_size);
+		memcpy(p, &ref->data[ref->member_size * index], ref->member_size);
 
-	ref->data = NULL;
-
-	for (int i = index; i < ref->size - 1; i++) {
-		ref->data[i] = ref->data[i + 1];
-		ref->data[i + 1] = NULL;
+		return p;
 	}
 
-	ref->size++;
-
-	if (ref->size > 0 && ref->size == ref->size / 4)
-		array_resize(ref, ref->capacity / 2);
+	return 0;
 }
 
-void* array_data(array *ref)
+char* array_data(array *ref)
 {
 	return ref->data;
 }
 
 void array_free(array *ref)
 {
-	for (int i = 0; i < ref->size; i++) {
-		free(ref->data[i]);
-	}
+	free(ref->data);
 }
