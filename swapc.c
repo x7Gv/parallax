@@ -63,7 +63,9 @@ VkExtent2D choose_swp_extent(VkSurfaceCapabilitiesKHR capabilities, GLFWwindow *
 swapchain_supp_detail_t query_swapchain_supp(VkPhysicalDevice device, VkSurfaceKHR surface)
 {
 	swapchain_supp_detail_t details = {};
-	array_init(&details.formats);
+
+	array_init(&details.formats, sizeof(VkSurfaceFormatKHR));
+	array_init(&details.present_modes, sizeof(VkPresentModeKHR));
 
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
 
@@ -73,17 +75,8 @@ swapchain_supp_detail_t query_swapchain_supp(VkPhysicalDevice device, VkSurfaceK
 	VkSurfaceFormatKHR tmp[format_count];
 
 	if (format_count != 0) {
-		array_resize(&details.formats, format_count);
-		vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count, tmp);
-
-		for (uint32_t i = 0; i < format_count; i++) {
-
-			VkSurfaceFormatKHR *p_form_tmp;
-			VkSurfaceFormatKHR form_tmp = tmp[i];
-			VAL_TO_HEAP(p_form_tmp, VkSurfaceFormatKHR, form_tmp);
-
-			array_append(&details.formats, p_form_tmp);
-		}
+		array_resize(&details.formats, format_count, true);
+		vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count, (VkSurfaceFormatKHR *) array_data(&details.formats));
 	}
 
 	uint32_t present_mode_count;
@@ -92,16 +85,8 @@ swapchain_supp_detail_t query_swapchain_supp(VkPhysicalDevice device, VkSurfaceK
 	VkPresentModeKHR tmp0[present_mode_count];
 
 	if (present_mode_count != 0) {
-		vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &present_mode_count, tmp0);
-
-		for (uint32_t i = 0; i < present_mode_count; i++) {
-
-			VkPresentModeKHR *p_present_tmp;
-			VkPresentModeKHR present_tmp = tmp0[i];
-			VAL_TO_HEAP(p_present_tmp, VkPresentModeKHR, present_tmp);
-
-			array_append(&details.present_modes, p_present_tmp);
-		}
+		array_resize(&details.present_modes, present_mode_count, true);
+		vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &present_mode_count, (VkPresentModeKHR *) array_data(&details.present_modes));
 	}
 
 	return details;
@@ -159,19 +144,12 @@ void init_swapchain(struct _application *ref)
 		}
 
 	vkGetSwapchainImagesKHR(ref->device, ref->swapchain, &img_count, NULL);
-	array_resize(&ref->swapc_imgs, img_count);
+
+	array_init(&ref->swapc_imgs, sizeof(VkImage));
+	array_resize(&ref->swapc_imgs, img_count, true);
 
 	VkImage tmp[img_count];
-	vkGetSwapchainImagesKHR(ref->device, ref->swapchain, &img_count, tmp);
-
-	for (int i = 0; i < img_count; i++) {
-
-		VkImage *p_img_tmp;
-		VkImage img_tmp = tmp[i];
-		VAL_TO_HEAP(p_img_tmp, VkImage, img_tmp);
-
-		array_append(&ref->swapc_imgs, p_img_tmp);
-	}
+	vkGetSwapchainImagesKHR(ref->device, ref->swapchain, &img_count, (VkImage *) array_data(&ref->swapc_imgs));
 
 	ref->swapc_img_format = surface_format.format;
 	ref->swapc_extent = extent;

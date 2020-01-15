@@ -1,6 +1,8 @@
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
+
 #include "application.h"
+
 #include "validations.h"
 #include "swapc.h"
 
@@ -56,8 +58,8 @@ static VkVertexInputBindingDescription get_binding_description()
 static array get_attribute_description()
 {
 	array attrib_desc;
-	array_init(&attrib_desc);
-	array_resize(&attrib_desc, 2);
+	array_init(&attrib_desc, sizeof(VkVertexInputAttributeDescription));
+	array_resize(&attrib_desc, 2, false);
 
 	VkVertexInputAttributeDescription attrib_arr[2] = {};
 
@@ -73,11 +75,7 @@ static array get_attribute_description()
 
 	for (int i = 0; i < 2; i++) {
 
-		VkVertexInputAttributeDescription *p_attrib_tmp;
-		VkVertexInputAttributeDescription attrib_tmp = attrib_arr[i];
-		VAL_TO_HEAP(p_attrib_tmp, VkVertexInputAttributeDescription, attrib_tmp);
-
-		array_append(&attrib_desc, p_attrib_tmp);
+		array_append(&attrib_desc, &attrib_arr[i]);
 	}
 
 	return attrib_desc;
@@ -150,7 +148,8 @@ void query_req_ext(array *arr)
 
 	glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_ext_count);
 
-	array_init(arr);
+	array_init(arr, sizeof(const char[256]));
+
 	for (uint32_t i = 0; i < glfw_ext_count; i++) {
 		array_append(arr, (void *) glfw_extensions[i]);
 	}
@@ -269,7 +268,6 @@ void draw_frame(struct _application *ref)
 		vkWaitForFences(ref->device, 1, &arr_get(ref->imgs_in_flight, VkFence, img_index), VK_TRUE, UINT64_MAX);
 	}
 
-
 	array_set(&ref->imgs_in_flight, current_frame, array_get(&ref->in_flight_fences, current_frame));
 
 	VkSubmitInfo submit_info = {};
@@ -361,15 +359,15 @@ void create_surface(struct _application *ref)
 void create_sync_objects(struct _application *ref)
 {
 
-	array_init(&ref->img_available_semaphore);
-	array_init(&ref->render_finished_semaphore);
-	array_init(&ref->in_flight_fences);
-	array_init(&ref->imgs_in_flight);
+	array_init(&ref->img_available_semaphore, sizeof(VkSemaphore));
+	array_init(&ref->render_finished_semaphore, sizeof(VkSemaphore));
+	array_init(&ref->in_flight_fences, sizeof(VkFence));
+	array_init(&ref->imgs_in_flight, sizeof(VkFence));
 
-	array_resize(&ref->img_available_semaphore, MAX_FRAMES_IN_FLIGHT);
-	array_resize(&ref->render_finished_semaphore, MAX_FRAMES_IN_FLIGHT);
-	array_resize(&ref->in_flight_fences, MAX_FRAMES_IN_FLIGHT);
-	array_resize(&ref->imgs_in_flight, array_size(&ref->swapc_imgs));
+	array_resize(&ref->img_available_semaphore, MAX_FRAMES_IN_FLIGHT, true);
+	array_resize(&ref->render_finished_semaphore, MAX_FRAMES_IN_FLIGHT, true);
+	array_resize(&ref->in_flight_fences, MAX_FRAMES_IN_FLIGHT, true);
+	array_resize(&ref->imgs_in_flight, array_size(&ref->swapc_imgs), false);
 
 	VkSemaphoreCreateInfo semaphore_ci = {};
 	semaphore_ci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -384,44 +382,23 @@ void create_sync_objects(struct _application *ref)
 
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 
-		VkResult res = vkCreateSemaphore(ref->device, &semaphore_ci, NULL, &tmp[i]);
+		VkResult res = vkCreateSemaphore(ref->device, &semaphore_ci, NULL, &((VkSemaphore *) array_data(&ref->img_available_semaphore))[i]);
 		if (res != VK_SUCCESS) {
 			fprintf(stderr, "ERR: failed to create semaphore for available images \n // Assertion: `vkCreateSemaphore() != VK_SUCCESS`\n");
 			exit(EXIT_FAILURE);
 		}
 
-		res = vkCreateSemaphore(ref->device, &semaphore_ci, NULL, &tmp0[i]);
+		res = vkCreateSemaphore(ref->device, &semaphore_ci, NULL, &((VkSemaphore *) array_data(&ref->render_finished_semaphore))[i]);
 		if (res != VK_SUCCESS) {
 			fprintf(stderr, "ERR: failed to create semaphore for finished render \n // Assertion: `vkCreateSemaphore() != VK_SUCCESS`\n");
 			exit(EXIT_FAILURE);
 		}
 
-		res = vkCreateFence(ref->device, &fence_ci, NULL, &tmp1[i]);
+		res = vkCreateFence(ref->device, &fence_ci, NULL, &((VkFence *) array_data(&ref->in_flight_fences))[i]);
 		if (res != VK_SUCCESS) {
 			fprintf(stderr, "ERR: failed to create fences \n // Assertion: `vkCreateFence() != VK_SUCCESS`\n");
 			exit(EXIT_FAILURE);
 		}
-	}
-
-	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-
-		VkSemaphore *p_semaph_tmp;
-		VkSemaphore semaph_tmp = tmp[i];
-		VAL_TO_HEAP(p_semaph_tmp, VkSemaphore, semaph_tmp);
-
-		array_append(&ref->img_available_semaphore, p_semaph_tmp);
-
-		VkSemaphore *p_semaph_tmp0;
-		VkSemaphore semaph_tmp0 = tmp0[i];
-		VAL_TO_HEAP(p_semaph_tmp0, VkSemaphore, semaph_tmp0);
-
-		array_append(&ref->render_finished_semaphore, p_semaph_tmp0);
-
-		VkFence *p_fence_tmp1;
-		VkFence fence_tmp1 = tmp1[i];
-		VAL_TO_HEAP(p_fence_tmp1, VkFence, fence_tmp1);
-
-		array_append(&ref->in_flight_fences, p_fence_tmp1);
 	}
 }
 
@@ -492,11 +469,13 @@ void init_vk(struct _application *ref)
 
 	uint32_t ext_count = 0;
 	vkEnumerateInstanceExtensionProperties(NULL, &ext_count, NULL);
-	arr_init(extensions);
-	array_resize(&extensions, ext_count);
 
-	VkExtensionProperties tmp_props[ext_count];
-	vkEnumerateInstanceExtensionProperties(NULL, &ext_count, tmp_props);
+	array extensions;
+	array_init(&extensions, sizeof(VkExtensionProperties));
+
+	array_resize(&extensions, ext_count, true);
+
+	vkEnumerateInstanceExtensionProperties(NULL, &ext_count, (VkExtensionProperties *) array_data(&extensions));
 
 	setup_debug_messenger(ref);
 
@@ -545,28 +524,13 @@ void init_physical_device(struct _application *ref)
 	 * Enumerate physical devices and store their handles at heap.
 	 */
 
-	VkPhysicalDevice tmp_array[dev_count];
+	array_init(&ref->physical_devices, sizeof(VkPhysicalDevice));
+	array_resize(&ref->physical_devices, dev_count, true);
 
-	array_init(&ref->physical_devices);
-	array_resize(&ref->physical_devices, dev_count);
-
-	int res = vkEnumeratePhysicalDevices(ref->vk_instance, &dev_count, tmp_array);
+	int res = vkEnumeratePhysicalDevices(ref->vk_instance, &dev_count, (VkPhysicalDevice *) array_data(&ref->physical_devices));
 	if (res != VK_SUCCESS) {
 		fprintf(stderr, "ERR: failed to pick a physical device\n // Assertion: `vkEnumeratePhysicalDevices == VK_SUCCESS`\n");
 		exit(EXIT_FAILURE);
-	}
-	
-	for (uint32_t i = 0; i < dev_count; i++) {
-
-		if (!is_dev_suitable(tmp_array[i], ref)) {
-			continue;
-		}
-
-		VkPhysicalDevice *p_phys_tmp;
-		VkPhysicalDevice phys_tmp = tmp_array[i];
-		VAL_TO_HEAP(p_phys_tmp, VkPhysicalDevice, phys_tmp);
-
-		array_append(&ref->physical_devices, p_phys_tmp);
 	}
 }
 
@@ -649,29 +613,24 @@ void create_command_pool(struct _application *ref)
  */
 void create_command_buffers(struct _application *ref)
 {
-	array_resize(&ref->cmd_buffers, array_size(&ref->swapc_framebuffers));
+	array_init(&ref->cmd_buffers, sizeof(VkCommandBuffer));
+	array_resize(&ref->cmd_buffers, array_size(&ref->swapc_framebuffers), true);
 
 	VkCommandBufferAllocateInfo alloc_info = {};
 	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	alloc_info.commandPool = ref->cmd_pool;
 	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	alloc_info.commandBufferCount = (uint32_t) array_size(&ref->swapc_framebuffers);
+	alloc_info.commandBufferCount = (uint32_t) array_size(&ref->cmd_buffers);
 
 	VkCommandBuffer tmp[array_size(&ref->swapc_framebuffers)];
 
-	VkResult res = vkAllocateCommandBuffers(ref->device, &alloc_info, tmp);
+	VkResult res = vkAllocateCommandBuffers(ref->device, &alloc_info, (VkCommandBuffer *) array_data(&ref->cmd_buffers));
 	if (res != VK_SUCCESS) {
 		fprintf(stderr, "ERR: failed to initialize command buffer\n // Assertion: `vkCreateCommandPool != VK_SUCCESS`\n");
 		exit(EXIT_FAILURE);
 	}
 
-	for (int i = 0; i < array_size(&ref->swapc_framebuffers); i++) {
-
-		VkCommandBuffer *p_buff_tmp;
-		VkCommandBuffer buff_tmp = tmp[i];
-		VAL_TO_HEAP(p_buff_tmp, VkCommandBuffer, buff_tmp);
-
-		array_append(&ref->cmd_buffers, p_buff_tmp);
+	for (int i = 0; i < array_size(&ref->cmd_buffers); i++) {
 
 		VkCommandBufferBeginInfo begin_info = {};
 		begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -723,7 +682,8 @@ void create_command_buffers(struct _application *ref)
 void init_image_views(struct _application *ref)
 {
 
-	array_resize(&ref->swapc_img_views, array_size(&ref->swapc_imgs));
+	array_init(&ref->swapc_img_views, sizeof(VkImageView));
+	array_resize(&ref->swapc_img_views, array_size(&ref->swapc_imgs), true);
 
 	VkImageView tmp[array_size(&ref->swapc_imgs)];
 
@@ -745,19 +705,11 @@ void init_image_views(struct _application *ref)
 		ci.subresourceRange.baseArrayLayer = 0;
 		ci.subresourceRange.layerCount = 1;
 
-		VkResult res = vkCreateImageView(ref->device, &ci, NULL, &tmp[i]);
+		VkResult res = vkCreateImageView(ref->device, &ci, NULL, &((VkImageView *) array_data(&ref->swapc_img_views))[i]);
 		if (res != VK_SUCCESS) {
 			fprintf(stderr, "ERR: failed to initialize image views\n // Assertion: `vkCreateImageView != VK_SUCCESS`\n");
 			exit(EXIT_FAILURE);
 		}
-	}
-
-	for (int i = 0; i < array_size(&ref->swapc_imgs); i++) {
-		VkImageView *p_imgv_tmp;
-		VkImageView imgv_tmp = tmp[i];
-		VAL_TO_HEAP(p_imgv_tmp, VkImageView, imgv_tmp);
-
-		array_append(&ref->swapc_img_views, p_imgv_tmp);
 	}
 }
 
@@ -865,8 +817,6 @@ void create_renderpass(struct _application *ref)
 		fprintf(stderr, "ERR: failed to initialize render pass\n // Assertion: `vkCreateImageView != VK_SUCCESS`\n");
 		exit(EXIT_FAILURE);
 	}
-
-	printf("yoyoyyoos\n");
 }
 
 uint32_t find_memory_type(struct _application *ref, uint32_t type_filter, VkMemoryPropertyFlags properties)
@@ -1147,7 +1097,8 @@ void create_graphics_pipeline(struct _application *ref)
  */
 void create_framebuffers(struct _application *ref)
 {
-	array_resize(&ref->swapc_framebuffers, array_size(&ref->swapc_img_views));
+	array_init(&ref->swapc_framebuffers, sizeof(VkFramebuffer));
+	array_resize(&ref->swapc_framebuffers, array_size(&ref->swapc_img_views), true);
 
 	VkFramebuffer tmp[array_size(&ref->swapc_img_views)];
 
@@ -1164,20 +1115,11 @@ void create_framebuffers(struct _application *ref)
 		framebuffer_ci.height = ref->swapc_extent.height;
 		framebuffer_ci.layers = 1;
 
-		VkResult res = vkCreateFramebuffer(ref->device, &framebuffer_ci, NULL, &tmp[i]);
+		VkResult res = vkCreateFramebuffer(ref->device, &framebuffer_ci, NULL, &(((VkFramebuffer *) array_data(&ref->swapc_framebuffers))[i]));
 		if (res != VK_SUCCESS) {
 			fprintf(stderr, "ERR: failed to initialize framebuffer\n // Assertion: `vkCreateFramebuffer != VK_SUCCESS`\n");
 			exit(EXIT_FAILURE);
 		}
-	}
-
-	for (int i = 0; i < array_size(&ref->swapc_img_views); i++) {
-
-		VkFramebuffer *p_framebuffer_tmp;
-		VkFramebuffer framebuffer_tmp = tmp[i];
-		VAL_TO_HEAP(p_framebuffer_tmp, VkFramebuffer, framebuffer_tmp);
-
-		array_append(&ref->swapc_framebuffers, p_framebuffer_tmp);
 	}
 }
 

@@ -46,20 +46,10 @@ int check_validation_layer_support()
 	vkEnumerateInstanceLayerProperties(&layer_count, NULL);
 
 	array available_layers;
-	array_init(&available_layers);
-	array_resize(&available_layers, layer_count);
+	array_init(&available_layers, sizeof(VkLayerProperties));
+	array_resize(&available_layers, layer_count, true);
 
-	VkLayerProperties tmp_props[layer_count];
-	vkEnumerateInstanceLayerProperties(&layer_count, tmp_props);
-
-	for (uint32_t i = 0; i < layer_count; i++) {
-
-		VkLayerProperties *tmp_layer_prop;
-		VkLayerProperties layer_prop_data = tmp_props[i];
-		VAL_TO_HEAP(tmp_layer_prop, VkLayerProperties, layer_prop_data);
-
-		array_append(&available_layers, tmp_layer_prop);
-	}
+	vkEnumerateInstanceLayerProperties(&layer_count, (VkLayerProperties *) array_data(&available_layers));
 
 	return 0;
 }
