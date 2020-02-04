@@ -32,9 +32,14 @@ size_t current_frame = 0;
  *	Given pos (x, y) and color data (rgb) in form of vertex_t struct.
  */
 const struct vertex_t vertices[] = {
-	{{0.0f, -0.5f}, {1.0f, 1.0f, 0.0f}},
-	{{0.5f, 0.5f},  {0.0f, 1.0f, 0.0f}},
-	{{-0.5f, 0.5f}, {0.0f, 1.0f, 1.0f}}
+	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+	{{0.5f, -0.5f},  {0.0f, 1.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+};
+
+const uint16_t indices[] = {
+	0, 1, 2, 2, 3, 0
 };
 
 /**
@@ -162,7 +167,6 @@ void query_req_ext(array *arr)
 /**
  *	Setup the debug / validation layer functionality to this specific instance.
  */
-
 void setup_debug_messenger(struct _application *ref)
 {
 	if (!enable_validation_layers)
@@ -181,7 +185,6 @@ void setup_debug_messenger(struct _application *ref)
 /**
  *	A general util to find physical devices queue family support.
  */
-
 queue_family_indices_t query_queue_families(VkPhysicalDevice phys_device, VkSurfaceKHR surface)
 {
 	queue_family_indices_t indices = {VK_NULL_HANDLE, VK_NULL_HANDLE};
@@ -263,8 +266,9 @@ void draw_frame(struct _application *ref)
 		exit(EXIT_FAILURE);
 	}
 
+	update_uniform_buffer(ref, img_index);
+
 	if (array_get(&ref->imgs_in_flight, img_index) != NULL) {
-		printf("jojojojo\n");
 		vkWaitForFences(ref->device, 1, &arr_get(ref->imgs_in_flight, VkFence, img_index), VK_TRUE, UINT64_MAX);
 	}
 
@@ -312,6 +316,32 @@ void draw_frame(struct _application *ref)
 	vkQueuePresentKHR(ref->present_queue, &present_info);
 
 	current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void update_uniform_buffer(struct _application *ref, uint32_t current_image)
+{
+	ubo_t ubo = *(ubo_t *) malloc(sizeof(ubo_t));
+	struct timeval tv;
+	uint64_t t;
+
+	gettimeofday(&tv, NULL);
+
+	t = ((tv.tv_sec * 1000 + tv.tv_usec / 1000) - (ref->start_tv.tv_sec * 1000 + ref->start_tv.tv_usec / 1000)) / 5;
+
+	float center[] = {0.0f, 0.0f, 0.0f};
+	float lookat_vec[] = {2.0f, 2.0f, 2.0f};
+	float vec_z[] = {0.0f, 0.0f, 1.0f};
+
+	glm_rotate_make(ubo.model, glm_rad(45.0f + (1.0f * t)), vec_z);
+	glm_lookat(lookat_vec, center, vec_z, ubo.view);
+	glm_perspective(glm_rad(45.0f), ref->swapc_extent.width / (float) ref->swapc_extent.height, 0.1f, 10.0f, ubo.proj);
+	ubo.proj[1][1] *= -1;
+
+	void *data;
+
+	vkMapMemory(ref->device, arr_get(ref->uniform_buffers_memory, VkDeviceMemory, current_image), 0, sizeof(ubo), 0, &data);
+	memcpy(data, &ubo, sizeof(ubo));
+	vkUnmapMemory(ref->device, arr_get(ref->uniform_buffers_memory, VkDeviceMemory, current_image));
 }
 
 /**
@@ -410,6 +440,7 @@ void init_vk(struct _application *ref)
 	VkResult res;
 
 	ref->framebuffer_resized = false;
+	gettimeofday(&ref->start_tv, NULL);
 
 	/**
 	 * Create VkInstance via filling up CREATE INFO struct.
@@ -492,13 +523,106 @@ void init_vk(struct _application *ref)
 	init_image_views(ref);
 
 	create_renderpass(ref);
+	create_descriptor_set_layout(ref);
 	create_graphics_pipeline(ref);
 	create_framebuffers(ref);
 	create_command_pool(ref);
+
 	create_vertex_buffer(ref);
+	create_index_buffer(ref);
+	create_uniform_buffers(ref);
+
+	create_descriptor_pool(ref);
+	create_descriptor_sets(ref);
+
 	create_command_buffers(ref);
 	create_sync_objects(ref);
 
+}
+
+void create_descriptor_set_layout(struct _application *ref)
+{
+	VkDescriptorSetLayoutBinding ubo_layout_binding = {};
+	ubo_layout_binding.binding = 0;
+	ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	ubo_layout_binding.descriptorCount = 1;
+	ubo_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	ubo_layout_binding.pImmutableSamplers = NULL;
+
+	VkDescriptorSetLayoutCreateInfo layout_info = {};
+	layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layout_info.bindingCount = 1;
+	layout_info.pBindings = &ubo_layout_binding;
+
+	int res = vkCreateDescriptorSetLayout(ref->device, &layout_info, NULL, &ref->descriptor_set_layout);
+	if (res != VK_SUCCESS) {
+		fprintf(stderr, "ERR: failed to create descriptor set layout\n // Assertion: `vkCreateDescriptorSetLayout == VK_SUCCESS`\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
+void create_descriptor_pool(struct _application *ref)
+{
+	VkDescriptorPoolSize pool_size = {};
+	pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	pool_size.descriptorCount = (uint32_t) array_size(&ref->swapc_imgs);
+
+	VkDescriptorPoolCreateInfo pool_info = {};
+	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool_info.poolSizeCount = 1;
+	pool_info.pPoolSizes = &pool_size;
+	pool_info.maxSets = (uint32_t) array_size(&ref->swapc_imgs);
+
+	int res = vkCreateDescriptorPool(ref->device, &pool_info, NULL, &ref->descriptor_pool);
+	if (res != VK_SUCCESS) {
+		fprintf(stderr, "ERR: failed to create descriptor pool\n // Assertion: `vkCreateDescriptorPool == VK_SUCCESS`\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
+void create_descriptor_sets(struct _application *ref)
+{
+	array layouts;
+	array_init(&layouts, sizeof(VkDescriptorSetLayout));
+	array_resize(&layouts, array_size(&ref->swapc_imgs), false);
+
+	for (int i = 0; i < array_size(&ref->swapc_imgs); i++) {
+		array_append(&layouts, &ref->descriptor_set_layout);
+	}
+
+	VkDescriptorSetAllocateInfo alloc_info = {};
+	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	alloc_info.descriptorPool = ref->descriptor_pool;
+	alloc_info.descriptorSetCount = (uint32_t) array_size(&ref->swapc_imgs);
+	alloc_info.pSetLayouts = (VkDescriptorSetLayout *) array_data(&layouts);
+
+	array_init(&ref->descriptor_sets, sizeof(VkDescriptorSet));
+	array_resize(&ref->descriptor_sets, array_size(&ref->swapc_imgs), true);
+
+	int res = vkAllocateDescriptorSets(ref->device, &alloc_info, (VkDescriptorSet *) array_data(&ref->descriptor_sets));
+	if (res != VK_SUCCESS) {
+		fprintf(stderr, "ERR: failed to create descriptor sets\n // Assertion: `vkAllocateDescriptorSets == VK_SUCCESS`\n");
+		exit(EXIT_FAILURE);
+	}
+
+	for (size_t i = 0; i < array_size(&ref->swapc_imgs); i++) {
+
+		VkDescriptorBufferInfo buffer_info = {};
+		buffer_info.buffer = arr_get(ref->uniform_buffers, VkBuffer, i);
+		buffer_info.offset = 0;
+		buffer_info.range = sizeof(ubo_t);
+
+		VkWriteDescriptorSet descriptor_write = {};
+		descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptor_write.dstSet = arr_get(ref->descriptor_sets, VkDescriptorSet, i);
+		descriptor_write.dstBinding = 0;
+		descriptor_write.dstArrayElement = 0;
+		descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptor_write.descriptorCount = 1;
+		descriptor_write.pBufferInfo = &buffer_info;
+
+		vkUpdateDescriptorSets(ref->device, 1, &descriptor_write, 0, NULL);
+	}
 }
 
 /**
@@ -662,8 +786,11 @@ void create_command_buffers(struct _application *ref)
 		VkBuffer vertex_buffers[] = { ref->vertex_buffer };
 		VkDeviceSize offsets[] = {0}; 
 		vkCmdBindVertexBuffers(arr_get(ref->cmd_buffers, VkCommandBuffer, i), 0, 1, vertex_buffers, offsets);
+		vkCmdBindIndexBuffer(arr_get(ref->cmd_buffers, VkCommandBuffer, i), ref->index_buffer, 0, VK_INDEX_TYPE_UINT16);
 
-		vkCmdDraw(arr_get(ref->cmd_buffers, VkCommandBuffer, i), sizeof(vertices), 1, 0, 0);
+		vkCmdBindDescriptorSets(arr_get(ref->cmd_buffers, VkCommandBuffer, i), VK_PIPELINE_BIND_POINT_GRAPHICS, ref->pipeline_layout, 0, 1, &((VkDescriptorSet *) array_data(&ref->descriptor_sets))[i], 0, NULL);
+
+		vkCmdDrawIndexed(arr_get(ref->cmd_buffers, VkCommandBuffer, i), (uint32_t) (sizeof(indices) / sizeof(indices[0])), 1, 0, 0, 0);
 		vkCmdEndRenderPass(arr_get(ref->cmd_buffers, VkCommandBuffer, i));
 
 		res = vkEndCommandBuffer(arr_get(ref->cmd_buffers, VkCommandBuffer, i));
@@ -833,6 +960,9 @@ uint32_t find_memory_type(struct _application *ref, uint32_t type_filter, VkMemo
 	return VK_NULL_HANDLE;
 }
 
+/*
+ *	Utility to help with copying `VkBuffer` objects when creating buffers
+ */
 void copy_buffer(struct _application *ref, VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size) 
 {
 	VkCommandBufferAllocateInfo alloc_info = {};
@@ -868,6 +998,9 @@ void copy_buffer(struct _application *ref, VkBuffer src_buffer, VkBuffer dst_buf
 	vkFreeCommandBuffers(ref->device, ref->cmd_pool, 1, &command_buffer);
 }
 
+/*
+ *	Abstractation of `VkBuffer` creation.
+ */
 void create_buffer(struct _application *ref, VkDeviceSize size, VkBufferUsageFlags usage, 
 	VkMemoryPropertyFlags props, VkBuffer *buffer, VkDeviceMemory *buffer_mem)
 {
@@ -902,6 +1035,9 @@ void create_buffer(struct _application *ref, VkDeviceSize size, VkBufferUsageFla
 	vkBindBufferMemory(ref->device, *buffer, *buffer_mem, 0);
 }
 
+/*
+ *	Create vertex buffer to be sent to GPU memory
+ */
 void create_vertex_buffer(struct _application *ref)
 {
 	VkDeviceSize buffer_size = sizeof(vertices);
@@ -920,6 +1056,49 @@ void create_vertex_buffer(struct _application *ref)
 
 	vkDestroyBuffer(ref->device, staging_buffer, NULL);
 	vkFreeMemory(ref->device, staging_buffer_memory, NULL);
+}
+
+void create_uniform_buffers(struct _application *ref)
+{
+	VkDeviceSize buffer_size = sizeof(ubo_t);
+
+	array_init(&ref->uniform_buffers, sizeof(VkBuffer));
+	array_resize(&ref->uniform_buffers, array_size(&ref->swapc_imgs), true);
+
+	array_init(&ref->uniform_buffers_memory, sizeof(VkDeviceMemory));
+	array_resize(&ref->uniform_buffers_memory, array_size(&ref->swapc_imgs), true);
+
+	for (size_t i = 0; i < array_size(&ref->swapc_imgs); i++) {
+		create_buffer(
+			ref, 
+			buffer_size, 
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+			&((VkBuffer *) array_data(&ref->uniform_buffers))[i], 
+			&((VkDeviceMemory *) array_data(&ref->uniform_buffers_memory))[i]
+		);
+	}
+}
+
+void create_index_buffer(struct _application *ref)
+{
+	VkDeviceSize buffer_size = sizeof(indices);
+
+	VkBuffer staging_buffer;
+	VkDeviceMemory staging_buffer_memory;
+	create_buffer(ref, buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staging_buffer, &staging_buffer_memory);
+
+	void *data;
+	vkMapMemory(ref->device, staging_buffer_memory, 0, buffer_size, 0, &data);
+	memcpy(data, indices, (size_t) buffer_size);
+	vkUnmapMemory(ref->device, staging_buffer_memory);
+
+	create_buffer(ref, buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &ref->index_buffer, &ref->index_buffer_memory);
+
+	copy_buffer(ref, staging_buffer, ref->index_buffer, buffer_size);
+
+	vkDestroyBuffer(ref->device, staging_buffer, NULL);
+	vkFreeMemory(ref->device, staging_buffer_memory, NULL);
+
 }
 
 /**
@@ -1004,7 +1183,7 @@ void create_graphics_pipeline(struct _application *ref)
 	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 	rasterizer.lineWidth = 1.0f;
 	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
 	rasterizer.depthBiasEnable = VK_FALSE;
 	rasterizer.depthBiasConstantFactor = 0.0f;
@@ -1046,13 +1225,9 @@ void create_graphics_pipeline(struct _application *ref)
 	color_blending.blendConstants[3] = 0.0f;
 
 	VkPipelineLayoutCreateInfo pipeline_layout_ci = {};
-
 	pipeline_layout_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_layout_ci.setLayoutCount = 0;
-	pipeline_layout_ci.pSetLayouts = NULL;
-	pipeline_layout_ci.pushConstantRangeCount = 0;
-	pipeline_layout_ci.pPushConstantRanges = NULL;
-
+	pipeline_layout_ci.setLayoutCount = 1;
+	pipeline_layout_ci.pSetLayouts = &ref->descriptor_set_layout;
 
 	res = vkCreatePipelineLayout(ref->device, &pipeline_layout_ci, NULL, &ref->pipeline_layout);
 	if (res != VK_SUCCESS) {
@@ -1130,6 +1305,11 @@ void create_framebuffers(struct _application *ref)
 void cleanup(struct _application *ref)
 {
 	cleanup_swapchain(ref);
+
+	vkDestroyDescriptorSetLayout(ref->device, ref->descriptor_set_layout, NULL);
+
+	vkDestroyBuffer(ref->device, ref->index_buffer, NULL);
+	vkFreeMemory(ref->device, ref->index_buffer_memory, NULL);
 
 	vkDestroyBuffer(ref->device, ref->vertex_buffer, NULL);
 	vkFreeMemory(ref->device, ref->vertex_buffer_memory, NULL);

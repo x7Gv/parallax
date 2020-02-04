@@ -174,6 +174,13 @@ void cleanup_swapchain(struct _application *ref)
 	}
 
 	vkDestroySwapchainKHR(ref->device, ref->swapchain, NULL);
+
+	for (size_t i = 0; i < array_size(&ref->swapc_imgs); i++) {
+		vkDestroyBuffer(ref->device, ((VkBuffer *) array_data(&ref->uniform_buffers))[i], NULL);
+		vkFreeMemory(ref->device, ((VkDeviceMemory *) array_data(&ref->uniform_buffers_memory))[i], NULL);
+	}
+
+	vkDestroyDescriptorPool(ref->device, ref->descriptor_pool, NULL);
 }
 
 void recreate_swapchain(struct _application *ref)
@@ -194,5 +201,9 @@ void recreate_swapchain(struct _application *ref)
 	create_renderpass(ref);
 	create_graphics_pipeline(ref);
 	create_framebuffers(ref);
+
+	create_uniform_buffers(ref);
+	create_descriptor_pool(ref);
+	create_descriptor_sets(ref);
 	create_command_buffers(ref);
 }

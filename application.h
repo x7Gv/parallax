@@ -4,6 +4,7 @@
 #include "lib/array.h"
 #include "lib/memutil.h"
 #include "stdbool.h"
+#include "sys/time.h"
 
 #include <cglm/cglm.h>
 
@@ -18,6 +19,14 @@ typedef struct vertex_t
 	vec3 color;
 }
 vertex_t;
+
+typedef struct ubo_t 
+{
+	mat4 model;
+	mat4 view;
+	mat4 proj;
+}
+ubo_t;
 
 static VkVertexInputBindingDescription get_binding_description();
 
@@ -51,6 +60,12 @@ struct _application
 	 * Rest of stuff.
 	 */
 
+	struct timeval start_tv;
+
+	VkDescriptorPool descriptor_pool;
+	VkDescriptorSetLayout descriptor_set_layout;
+	VkPipelineLayout pipeline_layout;
+
 	VkInstance vk_instance;
 	VkCommandPool cmd_pool;
 
@@ -61,16 +76,18 @@ struct _application
 	VkQueue present_queue;
 
 	VkBuffer vertex_buffer;
-	VkDeviceMemory vertex_buffer_memory;
 	VkBuffer uniform_buffer;
+	VkBuffer index_buffer;
+
+	VkDeviceMemory vertex_buffer_memory;
 	VkDeviceMemory uniform_buffer_memory;
+	VkDeviceMemory index_buffer_memory;
 
 	VkFormat swapc_img_format;
 	VkExtent2D swapc_extent;
 	VkSwapchainKHR swapchain;
 
 	VkRenderPass render_pass;
-	VkPipelineLayout pipeline_layout;
 	VkPipeline graphics_pipeline;
 
 	array img_available_semaphore;
@@ -95,6 +112,11 @@ struct _application
 
 	array cmd_buffers;
 
+	array uniform_buffers;
+	array uniform_buffers_memory;
+
+	array descriptor_sets;
+
 	uint32_t queue_family_count;
 	uint32_t swapchain_img_count;
 
@@ -108,6 +130,12 @@ struct _application
 queue_family_indices_t query_queue_families(VkPhysicalDevice phys_device, VkSurfaceKHR surface);
 
 int check_validation_layer_support();
+
+void update_uniform_buffer(struct _application *ref, uint32_t current_image);
+
+void create_descriptor_set_layout(struct _application *ref);
+
+void create_descriptor_sets(struct _application *ref);
 
 void query_req_ext(array *arr);
 
@@ -145,12 +173,18 @@ void create_command_pool(struct _application *ref);
 
 uint32_t find_memory_type(struct _application *ref, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
+void create_index_buffer(struct _application *ref);
+
 void create_vertex_buffer(struct _application *ref);
+
+void create_uniform_buffers(struct _application *ref);
 
 void create_command_buffers(struct _application *ref);
 
 void cleanup(struct _application *ref);
 
 void create_renderpass(struct _application *ref);
+
+void create_descriptor_pool(struct _application *ref);
 
 #endif
