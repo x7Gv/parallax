@@ -15,8 +15,9 @@
 
 typedef struct vertex_t
 {
-	vec2 pos;
+	vec3 pos;
 	vec3 color;
+	vec2 tex_coord;
 }
 vertex_t;
 
@@ -79,6 +80,11 @@ struct _application
 	VkBuffer uniform_buffer;
 	VkBuffer index_buffer;
 
+	VkSampler texture_sampler;
+	VkImageView texture_image_view;
+	VkImage texture_image;
+	VkDeviceMemory texture_image_memory;
+
 	VkDeviceMemory vertex_buffer_memory;
 	VkDeviceMemory uniform_buffer_memory;
 	VkDeviceMemory index_buffer_memory;
@@ -127,7 +133,29 @@ struct _application
 	bool framebuffer_resized;
 };
 
+void create_texture_sampler(struct _application *ref);
+
+void create_texture_image_view(struct _application *ref);
+
+VkCommandBuffer begin_single_time_commands(struct _application *ref);
+
+void end_single_time_commands(struct _application *ref, VkCommandBuffer command_buffer);
+
 queue_family_indices_t query_queue_families(VkPhysicalDevice phys_device, VkSurfaceKHR surface);
+
+void transition_image_layout(struct _application *ref, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
+
+void copy_buffer_to_image(struct _application *ref, VkBuffer buffer, VkImage image, uint32_t x, uint32_t y);
+
+void create_image(struct _application *ref, uint32_t x, uint32_t y, VkFormat format, VkImageTiling tiling, 
+	VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage *img, VkDeviceMemory *mem);
+
+void create_buffer(struct _application *ref, VkDeviceSize size, VkBufferUsageFlags usage, 
+	VkMemoryPropertyFlags props, VkBuffer *buffer, VkDeviceMemory *buffer_mem);
+
+void copy_buffer(struct _application *ref, VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
+
+void create_texture_image(struct _application *ref);
 
 int check_validation_layer_support();
 
