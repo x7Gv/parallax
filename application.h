@@ -76,6 +76,10 @@ struct _application
 	VkQueue graphics_queue;
 	VkQueue present_queue;
 
+	VkImage depth_image;
+	VkDeviceMemory depth_image_memory;
+	VkImageView depth_image_view;
+
 	VkBuffer vertex_buffer;
 	VkBuffer uniform_buffer;
 	VkBuffer index_buffer;
@@ -132,6 +136,8 @@ struct _application
 
 	bool framebuffer_resized;
 };
+
+void create_depth_resources(struct _application *ref);
 
 void create_texture_sampler(struct _application *ref);
 

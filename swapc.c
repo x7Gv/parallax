@@ -200,6 +200,7 @@ void recreate_swapchain(struct _application *ref)
 	init_image_views(ref);
 	create_renderpass(ref);
 	create_graphics_pipeline(ref);
+	create_depth_resources(ref);
 	create_framebuffers(ref);
 
 	create_uniform_buffers(ref);
